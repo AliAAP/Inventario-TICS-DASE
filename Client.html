@@ -1,0 +1,411 @@
+<script>
+    let base64CodigoDase = "";
+    let base64EtiquetaEquipo = "";
+    let sessionUserEmail = "";
+    let datosPendientesGuardar = null;
+
+    function initTheme() {
+        let savedTheme = 'dark';
+        try {
+            savedTheme = localStorage.getItem('inventarioTheme') || 'dark';
+        } catch (e) {}
+        document.body.classList.toggle('theme-light', savedTheme === 'light');
+        updateThemeButton(savedTheme);
+    }
+
+    function toggleTheme() {
+        const isLight = document.body.classList.toggle('theme-light');
+        const nextTheme = isLight ? 'light' : 'dark';
+        try {
+            localStorage.setItem('inventarioTheme', nextTheme);
+        } catch (e) {}
+        updateThemeButton(nextTheme);
+    }
+
+    function updateThemeButton(theme) {
+        const btn = document.getElementById('themeToggle');
+        if (!btn) return;
+        btn.innerText = theme === 'light' ? 'Modo oscuro' : 'Modo claro';
+    }
+
+    initTheme();
+
+    const ICONS = {
+        shield: '<svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3L5 6v5c0 4.5 2.9 8.4 7 10 4.1-1.6 7-5.5 7-10V6l-7-3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 12l2 2 4-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        sparkles: '<svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M18 14l.8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8L18 14z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+        sheet: '<svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 3h9l3 3v15H6V3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 12h6M9 16h6M9 8h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+        search: '<svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="6" stroke="currentColor" stroke-width="2"/><path d="M16 16l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
+    };
+
+    function setButtonIconText(button, iconName, text) {
+        button.innerHTML = `${ICONS[iconName] || ''}<span>${text}</span>`;
+    }
+
+    function verificarLogin() {
+        const inputEmail = document.getElementById('emailInput').value.trim();
+        if(!inputEmail) return;
+
+        const btn = document.getElementById('btnAcceder');
+        setButtonIconText(btn, 'shield', 'Verificando...');
+        btn.disabled = true;
+
+        google.script.run
+            .withSuccessHandler(esValido => {
+                if(esValido) {
+                    sessionUserEmail = inputEmail;
+                    document.getElementById('login-screen').style.display = 'none';
+                    document.getElementById('app-screen').style.display = 'block';
+                    cargarCustodios();
+                } else {
+                    mostrarMensajeLogin("Acceso denegado. Correo no autorizado.", "error");
+                    setButtonIconText(btn, 'shield', 'Verificar acceso');
+                    btn.disabled = false;
+                }
+            })
+            .withFailureHandler(err => {
+                mostrarMensajeLogin("Error de conexión", "error");
+                setButtonIconText(btn, 'shield', 'Verificar acceso');
+                btn.disabled = false;
+            })
+            .validarCorreoListaBlanca(inputEmail);
+    }
+
+    function mostrarMensajeLogin(t, c) {
+        const m = document.getElementById('login-message');
+        m.innerText = t; m.className = "message " + c; m.style.display = "block";
+        setTimeout(() => m.style.display="none", 5000);
+    }
+
+    function cargarCustodios() {
+        google.script.run.withSuccessHandler(list => {
+            document.getElementById('lista_custodios').innerHTML = list.map(n => `<option value="${n}">`).join('');
+        }).getListaCustodios(sessionUserEmail);
+    }
+
+    function agregarCustodioAlListado(nombre) {
+        const limpio = (nombre || '').trim();
+        if (!limpio) return;
+
+        const lista = document.getElementById('lista_custodios');
+        const existe = Array.from(lista.options).some(opt => opt.value.toUpperCase() === limpio.toUpperCase());
+        if (!existe) {
+            const option = document.createElement('option');
+            option.value = limpio.toUpperCase();
+            lista.appendChild(option);
+        }
+    }
+
+    function switchTab(id) {
+        document.querySelectorAll('.section, .tab').forEach(el => el.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        document.getElementById('tab-' + id.substring(0,3)).classList.add('active');
+
+        // Si el usuario regresa a la pestaña Registro, se reinicia la Consulta por completo
+        if (id === 'registro') {
+            document.getElementById('busqueda_custodio').value = '';
+            document.getElementById('lista_resultados').innerHTML = '';
+        }
+    }
+
+    function generarBase64Optimizado(origen, anchoOriginal, altoOriginal) {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const MAX_WIDTH = 800, MAX_HEIGHT = 800;
+        let width = anchoOriginal, height = altoOriginal;
+
+        if (width > height) { if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; } }
+        else { if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; } }
+
+        canvas.width = width; canvas.height = height;
+        ctx.drawImage(origen, 0, 0, width, height);
+        return canvas.toDataURL('image/jpeg', 0.8);
+    }
+
+    function actualizarBotonAnalisis() {
+        document.getElementById('analyzeBtn').disabled = !(base64CodigoDase || base64EtiquetaEquipo);
+    }
+
+    function activarAnalisisConImagen(dataUrl, tipo) {
+        if (tipo === 'codigo') {
+            document.getElementById('previewCodigoDase').innerHTML = `<img src="${dataUrl}" alt="Vista previa del código DASE">`;
+            base64CodigoDase = dataUrl.split(',')[1];
+        } else {
+            document.getElementById('previewEtiquetaEquipo').innerHTML = `<img src="${dataUrl}" alt="Vista previa de etiqueta del equipo">`;
+            base64EtiquetaEquipo = dataUrl.split(',')[1];
+        }
+        actualizarBotonAnalisis();
+    }
+
+    function procesarImagenSeleccionada(e, tipo) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const img = new Image();
+            img.onload = function() {
+                const dataUrl = generarBase64Optimizado(img, img.width, img.height);
+                activarAnalisisConImagen(dataUrl, tipo);
+            };
+            img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    document.getElementById('codigoDaseInput').onchange = e => procesarImagenSeleccionada(e, 'codigo');
+    document.getElementById('etiquetaEquipoInput').onchange = e => procesarImagenSeleccionada(e, 'etiqueta');
+
+    function analyzeImage() {
+        if (!base64CodigoDase && !base64EtiquetaEquipo) {
+            msg("Debe capturar al menos una fotografía para analizar.", "error");
+            return;
+        }
+
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        analyzeBtn.disabled = true; setButtonIconText(analyzeBtn, 'sparkles', 'Analizando...'); analyzeBtn.classList.add('btn-ai-active');
+
+        google.script.run
+            .withSuccessHandler(res => {
+                analyzeBtn.disabled = false; setButtonIconText(analyzeBtn, 'sparkles', 'Analizar con Gemini'); analyzeBtn.classList.remove('btn-ai-active');
+                if(res.success) {
+                    const data = res.data || {};
+                    const hayDatosExtraidos = [
+                        data.activo_fijo,
+                        data.descripcion,
+                        data.marca,
+                        data.modelo,
+                        data.serie
+                    ].some(valor => valor && valor.toString().trim() !== '');
+
+                    if (!hayDatosExtraidos) {
+                        msg("No se detectaron datos válidos en la imagen. Capture una etiqueta DASE o una etiqueta técnica visible.", "error");
+                        return;
+                    }
+
+                    document.getElementById('activo_fijo').value = data.activo_fijo || '';
+                    document.getElementById('descripcion').value = data.descripcion || '';
+                    document.getElementById('marca').value = data.marca || '';
+                    document.getElementById('modelo').value = data.modelo || '';
+                    document.getElementById('serie').value = data.serie || '';
+                    msg("Análisis completado. Revise los campos antes de guardar.", "success");
+                } else { msg("Error IA: " + res.error, "error"); }
+            })
+            .withFailureHandler(err => {
+                analyzeBtn.disabled = false; setButtonIconText(analyzeBtn, 'sparkles', 'Analizar con Gemini'); analyzeBtn.classList.remove('btn-ai-active');
+                msg("Fallo de conexión", "error");
+            })
+            .processImageAnalysis({
+                codigoDase: base64CodigoDase,
+                etiquetaEquipo: base64EtiquetaEquipo
+            }, sessionUserEmail);
+    }
+
+    function guardarInventario() {
+        const data = {
+            activo_fijo: document.getElementById('activo_fijo').value.trim().toUpperCase(),
+            descripcion: document.getElementById('descripcion').value,
+            marca: document.getElementById('marca').value,
+            modelo: document.getElementById('modelo').value,
+            serie: document.getElementById('serie').value,
+            custodio: document.getElementById('custodio').value,
+            ubicacion: document.getElementById('ubicacion').value,
+            direccion: document.getElementById('direccion').value,
+            estado: document.getElementById('estado').value,
+            observacion: document.getElementById('observacion').value
+        };
+
+        // 1. Validación de campos obligatorios
+        if (!data.descripcion || !data.custodio || !data.ubicacion || !data.direccion || !data.estado) { 
+            msg("Complete los campos con asterisco (*)", "error"); return;
+        }
+
+        // 2. Validación de formato estricto para el Activo Fijo (DASE-XXXXXX)
+        if (data.activo_fijo !== "") {
+            // Verifica que empiece con DASE- seguido de 6 dígitos numéricos exactos
+            const regexDase = /^DASE-\d{6}$/;
+            if (!regexDase.test(data.activo_fijo)) {
+                msg("El Activo Fijo debe tener el formato DASE- seguido de 6 números (Ej: DASE-001234)", "error");
+                return;
+            }
+        }
+
+        datosPendientesGuardar = data;
+        document.getElementById('confirmModal').classList.add('active');
+    }
+
+    function cerrarConfirmacion() {
+        datosPendientesGuardar = null;
+        document.getElementById('confirmModal').classList.remove('active');
+    }
+
+    function confirmarGuardado() {
+        if (!datosPendientesGuardar) return;
+        const data = datosPendientesGuardar;
+        const btnGuardar = document.getElementById('btnGuardar');
+        document.getElementById('confirmModal').classList.remove('active');
+        btnGuardar.disabled = true;
+        setButtonIconText(btnGuardar, 'sheet', 'Guardando...');
+
+        google.script.run.withSuccessHandler(res => {
+            btnGuardar.disabled = false;
+            setButtonIconText(btnGuardar, 'sheet', 'Guardar en Google Sheets');
+            if(res.success) {
+                mostrarResultadoGuardado(true, "Registro guardado", "Los datos se enviaron correctamente a Google Sheets.");
+                agregarCustodioAlListado(data.custodio);
+                resetForm();
+                cargarCustodios();
+                
+                // Limpia por completo la pantalla de consulta tras guardar
+                document.getElementById('busqueda_custodio').value = '';
+                document.getElementById('lista_resultados').innerHTML = '';
+                
+            } else {
+                mostrarResultadoGuardado(false, "No se pudo guardar", res.error || "Ocurrió un error al enviar los datos.");
+            }
+            datosPendientesGuardar = null;
+        }).withFailureHandler(err => {
+            btnGuardar.disabled = false;
+            setButtonIconText(btnGuardar, 'sheet', 'Guardar en Google Sheets');
+            mostrarResultadoGuardado(false, "Fallo de conexión", err.toString());
+            datosPendientesGuardar = null;
+        }).processInventorySave(data, sessionUserEmail);
+    }
+
+    function pedirConfirmacionLimpiar() {
+        document.getElementById('clearModal').classList.add('active');
+    }
+
+    function cerrarConfirmacionLimpiar() {
+        document.getElementById('clearModal').classList.remove('active');
+    }
+
+    function ejecutarLimpiar() {
+        cerrarConfirmacionLimpiar();
+        resetForm();
+    }
+
+    function mostrarResultadoGuardado(esExito, titulo, texto) {
+        const modal = document.getElementById('resultModal');
+        const icon = document.getElementById('resultIcon');
+        const path = document.getElementById('resultIconPath');
+
+        icon.className = "modal-icon " + (esExito ? "success" : "error");
+        path.setAttribute('d', esExito ? 'M5 12l4 4 10-10' : 'M6 6l12 12M18 6L6 18');
+        document.getElementById('resultTitle').innerText = titulo;
+        document.getElementById('resultText').innerText = texto;
+        modal.classList.add('active');
+    }
+
+    function cerrarResultado() {
+        document.getElementById('resultModal').classList.remove('active');
+    }
+
+    function actualizarTipoBusqueda() {
+        const tipo = document.querySelector('input[name="tipo_busqueda"]:checked').value;
+        const input = document.getElementById('busqueda_custodio');
+        input.value = "";
+        document.getElementById('lista_resultados').innerHTML = "";
+
+        if (tipo === 'codigo') {
+            input.removeAttribute('list');
+            input.placeholder = "Ej: DASE-002660";
+        } else {
+            input.setAttribute('list', 'lista_custodios');
+            input.placeholder = "Escriba el nombre del custodio...";
+        }
+    }
+
+    function consultarCustodio() {
+        const n = document.getElementById('busqueda_custodio').value;
+        if(!n) return;
+        const tipo = document.querySelector('input[name="tipo_busqueda"]:checked').value;
+        
+        const btnBuscar = document.getElementById('btnBuscar');
+        btnBuscar.disabled = true;
+        btnBuscar.classList.add('btn-loading');
+        setButtonIconText(btnBuscar, 'search', 'Buscando...');
+        
+        const mostrarResultados = res => {
+            btnBuscar.disabled = false;
+            btnBuscar.classList.remove('btn-loading');
+            setButtonIconText(btnBuscar, 'search', 'Buscar equipos');
+            
+            const container = document.getElementById('lista_resultados');
+            container.innerHTML = "";
+            if(res.success && res.data.length > 0) {
+                res.data.forEach(d => {
+                    container.innerHTML += `
+                        <div class="card">
+                            <div class="card-header">
+                                <span class="card-title">${d[1]}</span>
+                                <button class="btn-edit" onclick='cargarParaEditar(${JSON.stringify(d)})'>Editar</button>
+                            </div>
+                            <div class="card-body">
+                                <p><span class="field">ACTIVO/FIJO:</span> ${d[0] || '-'}</p>
+                                <p><span class="field">DESCRIPCIÓN:</span> ${d[1] || '-'}</p>
+                                <p><span class="field">MARCA:</span> ${d[2] || '-'}</p>
+                                <p><span class="field">MODELO:</span> ${d[3] || '-'}</p>
+                                <p><span class="field">SERIE:</span> ${d[4] || '-'}</p>
+                                <p><span class="field">CUSTODIO:</span> ${d[5] || '-'}</p>
+                                <p><span class="field">UBICACIÓN:</span> ${d[6] || '-'}</p>
+                                <p><span class="field">DIRECCIÓN:</span> ${d[7] || '-'}</p>
+                                <p><span class="field">ESTADO:</span> ${d[8] || '-'}</p>
+                                <p><span class="field">OBSERVACIÓN:</span> ${d[9] || '-'}</p>
+                            </div>
+                        </div>`;
+                });
+            } else { msg("No se encontraron equipos", "error"); }
+        };
+
+        const runner = google.script.run
+            .withSuccessHandler(mostrarResultados)
+            .withFailureHandler(err => {
+                btnBuscar.disabled = false;
+                btnBuscar.classList.remove('btn-loading');
+                setButtonIconText(btnBuscar, 'search', 'Buscar equipos');
+                msg("Fallo de conexión", "error");
+            });
+        if (tipo === 'codigo') {
+            runner.buscarEquiposPorCodigo(n, sessionUserEmail);
+        } else {
+            runner.buscarEquiposPorCustodio(n, sessionUserEmail);
+        }
+    }
+
+    function cargarParaEditar(d) {
+        document.getElementById('activo_fijo').value = d[0];
+        document.getElementById('descripcion').value = d[1];
+        document.getElementById('marca').value = d[2];
+        document.getElementById('modelo').value = d[3];
+        document.getElementById('serie').value = d[4];
+        document.getElementById('custodio').value = d[5];
+        document.getElementById('ubicacion').value = d[6];
+        document.getElementById('direccion').value = d[7];
+        document.getElementById('estado').value = d[8];
+        document.getElementById('observacion').value = d[9] || '';
+        switchTab('registro');
+        setButtonIconText(document.getElementById('btnGuardar'), 'sheet', 'Actualizar datos');
+        msg("Modo edición activado", "success");
+    }
+
+    function msg(t, c) {
+        const m = document.getElementById('message');
+        m.innerText = t; m.className = "message " + c; m.style.display = "block";
+        setTimeout(() => m.style.display="none", 5000);
+    }
+
+    function resetForm() {
+        document.querySelectorAll('#registro input:not([type="file"]), #registro select').forEach(i => i.value = "");
+        document.getElementById('codigoDaseInput').value = "";
+        document.getElementById('etiquetaEquipoInput').value = "";
+        document.getElementById('estado').value = "BUENO";
+        setButtonIconText(document.getElementById('btnGuardar'), 'sheet', 'Guardar en Google Sheets');
+        document.getElementById('previewCodigoDase').innerHTML = '<span>Vista previa del código DASE</span>';
+        document.getElementById('previewEtiquetaEquipo').innerHTML = '<span>Vista previa de etiqueta</span>';
+        document.getElementById('analyzeBtn').disabled = true;
+        setButtonIconText(document.getElementById('analyzeBtn'), 'sparkles', 'Analizar con Gemini');
+        document.getElementById('analyzeBtn').classList.remove('btn-ai-active');
+        base64CodigoDase = "";
+        base64EtiquetaEquipo = "";
+    }
+</script>
