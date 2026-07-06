@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventario TICS - DASE</title>
+    <?!= include('Styles'); ?>
+</head>
+<body>
+
+<header class="topbar">
+    <div class="topbar-inner">
+        <div class="brand-block">
+            <div class="brand-mark">DASE</div>
+            <div>
+                <div class="brand-title">Empresa Pública Municipal de Acción Social y Educación</div>
+                <div class="brand-subtitle">Control interno de inventario TICS</div>
+            </div>
+        </div>
+        <div class="top-actions">
+            <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" type="button">Modo claro</button>
+            <div class="status-pill">Prototipo Apps Script + Gemini 3 Flash Preview</div>
+        </div>
+    </div>
+</header>
+
+<main class="page">
+    <div id="login-screen">
+        <div class="login-card">
+            <span class="side-kicker">Acceso restringido</span>
+            <h2>Inventario TICS DASE</h2>
+            <p>Ingrese un correo autorizado para continuar.</p>
+            <input type="email" id="emailInput" name="correo_autorizado" autocomplete="email" placeholder="correo@guayaquil.gov.ec" required>
+            <button class="btn btn-primary" id="btnAcceder" onclick="verificarLogin()" style="margin-top: 16px;">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M12 3L5 6v5c0 4.5 2.9 8.4 7 10 4.1-1.6 7-5.5 7-10V6l-7-3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                    <path d="M9 12l2 2 4-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Verificar acceso
+            </button>
+            <div id="login-message" class="message"></div>
+        </div>
+    </div>
+
+    <div id="app-screen" style="display: none;">
+        <div class="shell">
+            <aside class="side-panel">
+                <span class="side-kicker">Módulo TICS</span>
+                <h2 class="side-title">Registro y consulta de activos</h2>
+                <p class="side-copy">Herramienta interna para levantar información de equipos mediante fotografía de etiqueta, validación manual y almacenamiento en Google Sheets.</p>
+
+                <div class="mini-list">
+                    <div class="mini-item">
+                        <strong>1. Captura</strong>
+                        Tome la foto de la etiqueta. (Si el código DASE y la marca están juntos, basta con una sola foto).
+                    </div>
+                    <div class="mini-item">
+                        <strong>2. Revisión</strong>
+                        Gemini propone datos; el usuario confirma o corrige.
+                    </div>
+                    <div class="mini-item">
+                        <strong>3. Registro</strong>
+                        El activo se guarda o actualiza en la hoja de cálculo.
+                    </div>
+                </div>
+            </aside>
+
+            <section class="work-panel">
+                <div class="module-header">
+                    <div>
+                        <h1>Inventario de equipos</h1>
+                        <p>Registro operativo para custodios, ubicación y estado del activo.</p>
+                    </div>
+                </div>
+
+                <div class="tabs">
+                    <div id="tab-reg" class="tab active" onclick="switchTab('registro')">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M9 4h6l1 2h3v15H5V6h3l1-2z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                            <path d="M9 11h6M9 15h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                        Registro
+                    </div>
+                    <div id="tab-con" class="tab" onclick="switchTab('consulta')">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <circle cx="11" cy="11" r="6" stroke="currentColor" stroke-width="2"/>
+                            <path d="M16 16l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                        Consulta
+                    </div>
+                </div>
+
+                <div id="registro" class="section active">
+                    <div class="photo-panel">
+                        <div class="preview-list">
+                            <div class="preview-card">
+                                <div class="preview-title">1. Código DASE</div>
+                                <div id="previewCodigoDase" class="preview-box">
+                                    <span>Vista previa del código DASE</span>
+                                </div>
+                            </div>
+                            <div class="preview-card">
+                                <div class="preview-title">2. Etiqueta del equipo</div>
+                                <div id="previewEtiquetaEquipo" class="preview-box">
+                                    <span>Vista previa de etiqueta</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="photo-actions">
+                            <input type="file" id="codigoDaseInput" accept="image/*" capture="environment" style="display: none;">
+                            <input type="file" id="etiquetaEquipoInput" accept="image/*" capture="environment" style="display: none;">
+                            <button class="btn btn-primary" onclick="document.getElementById('codigoDaseInput').click()">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                    <path d="M8 7l1.5-2h5L16 7h3a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                    <circle cx="12" cy="13" r="4" stroke="currentColor" stroke-width="2"/>
+                                </svg>
+                                Foto código DASE
+                            </button>
+                            <button class="btn btn-primary" onclick="document.getElementById('etiquetaEquipoInput').click()">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                    <path d="M8 7l1.5-2h5L16 7h3a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                    <circle cx="12" cy="13" r="4" stroke="currentColor" stroke-width="2"/>
+                                </svg>
+                                Foto etiqueta equipo
+                            </button>
+                            <button class="btn btn-ai" id="analyzeBtn" onclick="analyzeImage()" disabled>
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                    <path d="M12 3l1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                    <path d="M18 14l.8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8L18 14z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                </svg>
+                                Analizar con Gemini
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-grid">
+                        <div class="field-full">
+                            <label>Activo / fijo</label>
+                            <input type="text" id="activo_fijo" name="activo_fijo_dase" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="DASE-000000" maxlength="11">
+                        </div>
+
+                        <div class="field-full">
+                            <label>Descripción *</label>
+                            <input type="text" id="descripcion" name="descripcion_equipo" autocomplete="off" autocapitalize="characters" placeholder="CPU, MONITOR, TECLADO...">
+                        </div>
+
+                        <div>
+                            <label>Marca</label>
+                            <input type="text" id="marca" name="marca_equipo" autocomplete="off" autocapitalize="characters">
+                        </div>
+
+                        <div>
+                            <label>Modelo</label>
+                            <input type="text" id="modelo" name="modelo_equipo" autocomplete="off" autocapitalize="characters">
+                        </div>
+
+                        <div>
+                            <label>Serie (S/N / Service Tag)</label>
+                            <input type="text" id="serie" name="serie_equipo" autocomplete="off" autocapitalize="characters" spellcheck="false">
+                        </div>
+
+                        <div>
+                            <label>Custodio *</label>
+                            <input type="text" id="custodio" name="custodio_equipo" list="lista_custodios" autocomplete="off" placeholder="Nombre completo">
+                            <datalist id="lista_custodios"></datalist>
+                        </div>
+
+                        <div>
+                            <label>Ubicación *</label>
+                            <select id="ubicacion">
+                                <option value="">Seleccionar</option>
+                                <option value="PLANTA BAJA">PLANTA BAJA</option>
+                                <option value="PISO 1">PISO 1</option>
+                                <option value="PISO 2">PISO 2</option>
+                                <option value="PISO 3">PISO 3</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label>Dirección *</label>
+                            <select id="direccion" name="direccion_equipo">
+                                <option value="">Seleccionar</option>
+                                <option value="DIRECCIÓN ADMINISTRATIVA">DIRECCIÓN ADMINISTRATIVA</option>
+                                <option value="DIRECCIÓN DE PLANIFICACIÓN">DIRECCIÓN DE PLANIFICACIÓN</option>
+                                <option value="DIRECCIÓN DE TALENTO HUMANO">DIRECCIÓN DE TALENTO HUMANO</option>
+                                <option value="DIRECCIÓN DE TECNOLOGÍAS DE LA INFORMACIÓN Y COMUNICACIÓN">DIRECCIÓN DE TECNOLOGÍAS DE LA INFORMACIÓN Y COMUNICACIÓN</option>
+                                <option value="DIRECCIÓN FINANCIERA">DIRECCIÓN FINANCIERA</option>
+                                <option value="RECEPCIÓN">RECEPCIÓN</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label>Estado *</label>
+                            <select id="estado">
+                                <option value="BUENO">BUENO</option>
+                                <option value="REGULAR">REGULAR</option>
+                                <option value="MALO">MALO</option>
+                            </select>
+                        </div>
+
+                        <div class="field-full">
+                            <label>Observación</label>
+                            <input type="text" id="observacion" name="observacion_equipo" autocomplete="off" placeholder="Comentarios adicionales...">
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px;">
+                        <button class="btn btn-danger" type="button" onclick="pedirConfirmacionLimpiar()">
+                            <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            Limpiar formulario
+                        </button>
+                        <button class="btn btn-success" id="btnGuardar" onclick="guardarInventario()">
+                            <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M6 3h9l3 3v15H6V3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                <path d="M9 12h6M9 16h6M9 8h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            </svg>
+                            Guardar en Google Sheets
+                        </button>
+                    </div>
+                </div>
+
+                <div id="consulta" class="section">
+                    <label>Buscar registros de</label>
+                    <div class="search-mode">
+                        <label class="radio-option">
+                            <input type="radio" name="tipo_busqueda" value="custodio" checked onchange="actualizarTipoBusqueda()">
+                            Custodio
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="tipo_busqueda" value="codigo" onchange="actualizarTipoBusqueda()">
+                            Código DASE
+                        </label>
+                    </div>
+                    <input type="text" id="busqueda_custodio" name="busqueda_custodio" list="lista_custodios" autocomplete="off" placeholder="Escriba el nombre del custodio...">
+                    <button class="btn btn-primary" id="btnBuscar" onclick="consultarCustodio()" style="margin-top: 10px;">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <circle cx="11" cy="11" r="6" stroke="currentColor" stroke-width="2"/>
+                            <path d="M16 16l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                        Buscar equipos
+                    </button>
+                    <div id="lista_resultados"></div>
+                </div>
+
+                <div id="message" class="message"></div>
+            </section>
+        </div>
+    </div>
+</main>
+
+<div id="confirmModal" class="modal-backdrop">
+    <div class="modal-box">
+        <h3>Confirmar guardado</h3>
+        <p>Revise los datos antes de enviarlos a Google Sheets. ¿Desea guardar este registro?</p>
+        <div class="modal-actions">
+            <button class="btn btn-ai" type="button" onclick="cerrarConfirmacion()">Cancelar</button>
+            <button class="btn btn-success" type="button" onclick="confirmarGuardado()">Aceptar</button>
+        </div>
+    </div>
+</div>
+
+<div id="clearModal" class="modal-backdrop">
+    <div class="modal-box">
+        <h3>¿Limpiar formulario?</h3>
+        <p>Se borrarán todas las fotos y textos que haya ingresado en esta pantalla. Los datos guardados previamente no se verán afectados.</p>
+        <div class="modal-actions">
+            <button class="btn btn-ai" type="button" onclick="cerrarConfirmacionLimpiar()">Cancelar</button>
+            <button class="btn btn-danger" type="button" onclick="ejecutarLimpiar()">Limpiar</button>
+        </div>
+    </div>
+</div>
+
+<div id="resultModal" class="modal-backdrop">
+    <div class="modal-box">
+        <div id="resultIcon" class="modal-icon success">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path id="resultIconPath" d="M5 12l4 4 10-10" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </div>
+        <h3 id="resultTitle">Registro guardado</h3>
+        <p id="resultText">Los datos se enviaron correctamente.</p>
+        <button class="btn btn-primary" type="button" onclick="cerrarResultado()">Aceptar</button>
+    </div>
+</div>
+
+<?!= include('Client'); ?>
+</body>
+</html>
