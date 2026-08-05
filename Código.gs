@@ -128,7 +128,7 @@ Responde SOLO el JSON:
   "descripcion": "",
   "marca": "",
   "modelo": "",
-  "serie": "",
+  "serie": ""
 }`;
 
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`;
@@ -233,12 +233,10 @@ function processInventorySave(data, correoUsuario) {
     const modeloEntrada = (data.modelo || '').toString().trim().toUpperCase();
     const obsEntrada = (data.observacion || '').toString().trim().toUpperCase();
     
-    // Validación backend de campos obligatorios
     if (tipoEquipo === '' || (data.custodio || '').trim() === '' || (data.ubicacion || '').trim() === '' || (data.direccion || '').trim() === '' || (data.estado || '').trim() === '') {
       return { success: false, error: 'Operación bloqueada por el servidor: Faltan campos obligatorios requeridos (*).' };
     }
 
-    // Verifica estrictamente el formato DASE-XXXXXX antes de guardar
     if (activoFijo !== '') {
       const regexDase = /^DASE-\d{6}$/;
       if (!regexDase.test(activoFijo)) {
@@ -260,60 +258,69 @@ function processInventorySave(data, correoUsuario) {
     ];
 
     let rowIndex = -1;
-    
-    // 1. PASO: Identificar si estamos editando un equipo existente
+
+    // 1. Identificación de registro existente: Determina si el equipo debe actualizarse o registrarse
     for (let i = 1; i < fullData.length; i++) {
       const activoCelda = fullData[i][0].toString().trim().toUpperCase();
-      const descCelda = fullData[i][1].toString().trim().toUpperCase();
-      const marcaCelda = fullData[i][2].toString().trim().toUpperCase();
-      const modeloCelda = fullData[i][3].toString().trim().toUpperCase();
       const serieCelda = fullData[i][4].toString().trim().toUpperCase();
-      const obsCelda = fullData[i][9].toString().trim().toUpperCase();
       
-      // NIVEL 1: Identidad por Activo Fijo (Si tiene)
-      if (activoFijo !== '' && activoCelda === activoFijo && descCelda === tipoEquipo) {
-        rowIndex = i + 1; 
-        break;
-      }
-      
-      // NIVEL 2: Identidad por Serie (Si no tiene Activo Fijo pero sí tiene Serie)
-      else if (activoFijo === '' && sn !== '' && serieCelda === sn && descCelda === tipoEquipo) {
-        rowIndex = i + 1;
-        break;
-      }
-
-      // NIVEL 3: EQUIPOS FANTASMA (No tienen Activo Fijo ni Serie)
-      else if (activoFijo === '' && sn === '' && activoCelda === '' && serieCelda === '' && descCelda === tipoEquipo) {
-        // Al no tener "cédula", usamos la combinación de Marca, Modelo y Observación para encontrarlo
-        if (marcaCelda === marcaEntrada && modeloCelda === modeloEntrada && obsCelda === obsEntrada) {
+      if (data.origen === 'consulta') {
+        // Si viene de Editar, buscamos la fila ORIGINAL mediante los datos que tenía antes del cambio
+        const origActivo = (data.originalActivo || '').toString().trim().toUpperCase();
+        const origSerie = (data.originalSerie || '').toString().trim().toUpperCase();
+        
+        if (origSerie !== '' && serieCelda === origSerie) {
+          rowIndex = i + 1;
+          break;
+        } else if (origSerie === '' && origActivo !== '' && activoCelda === origActivo && serieCelda === '') {
+          rowIndex = i + 1;
+          break;
+        }
+      } else {
+        // Si es Nuevo Registro manual, buscamos si los datos ingresados ya existen
+        if (sn !== '' && serieCelda === sn) {
+          rowIndex = i + 1;
+          break;
+        } else if (sn === '' && activoFijo !== '' && activoCelda === activoFijo && serieCelda === '') {
           rowIndex = i + 1;
           break;
         }
       }
     }
 
-    // 2. PASO: Validar que la serie sea estrictamente única en todo el documento
+    // 2. Control de duplicidad por serie
     if (sn !== '') {
       for (let i = 1; i < fullData.length; i++) {
         const serieCelda = fullData[i][4].toString().trim().toUpperCase();
         
         if (serieCelda === sn) {
-          // Si la serie ya la tiene OTRA fila distinta a la que vamos a editar, BLOQUEA
-          if ((i + 1) !== rowIndex) {
-            const activoRobado = fullData[i][0].toString().trim().toUpperCase();
-            const descRobado = fullData[i][1].toString().trim().toUpperCase();
-            return { success: false, error: `Esta serie ya está en uso por el equipo: ${descRobado} ${activoRobado !== '' ? '('+activoRobado+')' : ''}. La serie no puede repetirse.` };
+          const rowFound = i + 1;
+          const activoRobado = fullData[i][0].toString().trim().toUpperCase();
+          const descRobado = fullData[i][1].toString().trim().toUpperCase();
+
+          if (data.origen !== 'consulta') {
+            // Ingreso Manual: Bloquea inmediatamente porque la serie ya existe
+            return { success: false, error: `Control de duplicidad: La serie ingresada ya se encuentra asociada a otro equipo distinto (${descRobado} ${activoRobado}). Debe usar "Consulta" para actualizarlo.` };
+          } else {
+            // Edición desde Consulta: Si la serie existe PERO en una fila distinta a la que editas (Robo de serie)
+            if (rowFound !== rowIndex) {
+              return { success: false, error: `Control de duplicidad: No puede asignar esta serie porque ya pertenece a OTRO equipo distinto (${descRobado} ${activoRobado}).` };
+            }
           }
         }
       }
     }
 
-    // Guardar o Actualizar
-    if (rowIndex !== -1) { 
+    // 3. Guardar o Actualizar
+    if (rowIndex !== -1 && data.origen === 'consulta') { 
+      // SOBRESCRIBE la fila exacta (No importa si le cambiaste el DASE o la Serie)
       sheet.getRange(rowIndex, 1, 1, 10).setValues([rowData]); 
     } else { 
+      // Crea un registro nuevo SOLO si viene de la pestaña Registro
       sheet.appendRow(rowData); 
     }
+
+    SpreadsheetApp.flush();
 
     // Ordenamiento automático
     const lastRow = sheet.getLastRow();
@@ -321,7 +328,7 @@ function processInventorySave(data, correoUsuario) {
       const range = sheet.getRange(2, 1, lastRow - 1, 10);
       const values = range.getValues();
       const priorUbi = { 'PLANTA BAJA': 1, 'PISO 1': 2, 'PISO 2': 3, 'PISO 3': 4 };
-      const priorDes = { 'TODO EN UNO': 1, 'CPU': 2, 'MONITOR': 3, 'TECLADO': 4, 'MOUSE': 5, 'LAPTOP': 6, 'IMPRESORA': 7, 'ESCÁNER': 7 };
+      const priorDes = { 'TODO EN UNO': 1, 'CPU': 2, 'MONITOR': 3, 'TECLADO': 4, 'MOUSE': 5, 'LAPTOP': 6, 'IMPRESORA': 7, 'ESCÁNER': 8 };
 
       values.sort((a, b) => {
         // 1. Primero ordena por UBICACIÓN (Índice 6)
@@ -340,8 +347,11 @@ function processInventorySave(data, correoUsuario) {
       });
       range.setValues(values);
     }
+    // Segunda Sincronización Forzada: Asegura el ordenamiento antes de soltar el candado
+    SpreadsheetApp.flush();
+
     return { success: true };
-    } catch (error) {
+  } catch (error) {
     return { success: false, error: error.toString() };
   } finally {
     if (lockAcquired) lock.releaseLock();
