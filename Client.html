@@ -100,7 +100,6 @@
         document.getElementById(id).classList.add('active');
         document.getElementById('tab-' + id.substring(0,3)).classList.add('active');
 
-        // Si el usuario regresa a la pestaña Registro, se reinicia la Consulta por completo
         if (id === 'registro') {
             document.getElementById('busqueda_custodio').value = '';
             document.getElementById('lista_resultados').innerHTML = '';
@@ -201,6 +200,7 @@
     }
 
     function guardarInventario() {
+        const btnGuardar = document.getElementById('btnGuardar');
         const data = {
             activo_fijo: document.getElementById('activo_fijo').value.trim().toUpperCase(),
             descripcion: document.getElementById('descripcion').value,
@@ -211,17 +211,19 @@
             ubicacion: document.getElementById('ubicacion').value,
             direccion: document.getElementById('direccion').value,
             estado: document.getElementById('estado').value,
-            observacion: document.getElementById('observacion').value
+            observacion: document.getElementById('observacion').value,
+            
+            // Le pasamos al backend de dónde venimos y cuáles eran los datos originales
+            origen: btnGuardar.dataset.origen || 'registro',
+            originalActivo: btnGuardar.dataset.originalActivo || '',
+            originalSerie: btnGuardar.dataset.originalSerie || ''
         };
 
-        // 1. Validación de campos obligatorios
         if (!data.descripcion || !data.custodio || !data.ubicacion || !data.direccion || !data.estado) { 
             msg("Complete los campos con asterisco (*)", "error"); return;
         }
 
-        // 2. Validación de formato estricto para el Activo Fijo (DASE-XXXXXX)
         if (data.activo_fijo !== "") {
-            // Verifica que empiece con DASE- seguido de 6 dígitos numéricos exactos
             const regexDase = /^DASE-\d{6}$/;
             if (!regexDase.test(data.activo_fijo)) {
                 msg("El Activo Fijo debe tener el formato DASE- seguido de 6 números (Ej: DASE-001234)", "error");
@@ -241,6 +243,8 @@
     function confirmarGuardado() {
         if (!datosPendientesGuardar) return;
         const data = datosPendientesGuardar;
+        datosPendientesGuardar = null; 
+
         const btnGuardar = document.getElementById('btnGuardar');
         document.getElementById('confirmModal').classList.remove('active');
         btnGuardar.disabled = true;
@@ -255,19 +259,16 @@
                 resetForm();
                 cargarCustodios();
                 
-                // Limpia por completo la pantalla de consulta tras guardar
                 document.getElementById('busqueda_custodio').value = '';
                 document.getElementById('lista_resultados').innerHTML = '';
                 
             } else {
                 mostrarResultadoGuardado(false, "No se pudo guardar", res.error || "Ocurrió un error al enviar los datos.");
             }
-            datosPendientesGuardar = null;
         }).withFailureHandler(err => {
             btnGuardar.disabled = false;
             setButtonIconText(btnGuardar, 'sheet', 'Guardar en Google Sheets');
             mostrarResultadoGuardado(false, "Fallo de conexión", err.toString());
-            datosPendientesGuardar = null;
         }).processInventorySave(data, sessionUserEmail);
     }
 
@@ -308,17 +309,40 @@
 
         if (tipo === 'codigo') {
             input.removeAttribute('list');
-            input.placeholder = "Ej: DASE-002660";
+            input.placeholder = "Ej: DASE-123456";
+            
+            // LIMITA EL CAMPO A 11 CARACTERES
+            input.setAttribute('maxlength', '11'); 
+            input.oninput = function() { this.value = this.value.toUpperCase(); }; 
         } else {
             input.setAttribute('list', 'lista_custodios');
             input.placeholder = "Escriba el nombre del custodio...";
+            
+            // Quita el límite para permitir nombres largos
+            input.removeAttribute('maxlength'); 
+            input.oninput = function() { this.value = this.value.toUpperCase(); }; 
         }
     }
 
     function consultarCustodio() {
         const n = document.getElementById('busqueda_custodio').value;
-        if(!n) return;
+        
+        // Validación de campo vacío
+        if(!n.trim()) {
+            msg("Por favor, ingrese un dato para buscar.", "error");
+            return;
+        }
+        
         const tipo = document.querySelector('input[name="tipo_busqueda"]:checked').value;
+        
+        // Validación estricta del formato DASE
+        if (tipo === 'codigo') {
+            const regexDase = /^DASE-\d{6}$/i;
+            if (!regexDase.test(n.trim())) {
+                msg("El código debe tener el formato DASE- seguido de 6 números (Ej: DASE-123456)", "error");
+                return;
+            }
+        }
         
         const btnBuscar = document.getElementById('btnBuscar');
         btnBuscar.disabled = true;
@@ -332,13 +356,17 @@
             
             const container = document.getElementById('lista_resultados');
             container.innerHTML = "";
-            if(res.success && res.data.length > 0) {
+            
+            if(res.success && res.data && res.data.length > 0) {
                 res.data.forEach(d => {
+                    // BLINDAJE CONTRA COMILLAS PARA EL BOTÓN EDITAR
+                    const dataSegura = JSON.stringify(d).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+                    
                     container.innerHTML += `
                         <div class="card">
                             <div class="card-header">
                                 <span class="card-title">${d[1]}</span>
-                                <button class="btn-edit" onclick='cargarParaEditar(${JSON.stringify(d)})'>Editar</button>
+                                <button class="btn-edit" onclick="cargarParaEditar(${dataSegura})">Editar</button>
                             </div>
                             <div class="card-body">
                                 <p><span class="field">ACTIVO/FIJO:</span> ${d[0] || '-'}</p>
@@ -354,7 +382,9 @@
                             </div>
                         </div>`;
                 });
-            } else { msg("No se encontraron equipos", "error"); }
+            } else { 
+                msg("No se encontraron equipos con esos datos.", "error"); 
+            }
         };
 
         const runner = google.script.run
@@ -363,8 +393,9 @@
                 btnBuscar.disabled = false;
                 btnBuscar.classList.remove('btn-loading');
                 setButtonIconText(btnBuscar, 'search', 'Buscar equipos');
-                msg("Fallo de conexión", "error");
+                msg("Fallo de conexión al buscar", "error");
             });
+            
         if (tipo === 'codigo') {
             runner.buscarEquiposPorCodigo(n, sessionUserEmail);
         } else {
@@ -383,8 +414,17 @@
         document.getElementById('direccion').value = d[7];
         document.getElementById('estado').value = d[8];
         document.getElementById('observacion').value = d[9] || '';
+        
         switchTab('registro');
-        setButtonIconText(document.getElementById('btnGuardar'), 'sheet', 'Actualizar datos');
+        
+        const btnGuardar = document.getElementById('btnGuardar');
+        setButtonIconText(btnGuardar, 'sheet', 'Actualizar datos');
+        
+        // Guardamos las llaves originales de forma oculta en el botón
+        btnGuardar.dataset.origen = 'consulta'; 
+        btnGuardar.dataset.originalActivo = d[0] || '';
+        btnGuardar.dataset.originalSerie = d[4] || '';
+        
         msg("Modo edición activado", "success");
     }
 
@@ -395,16 +435,35 @@
     }
 
     function resetForm() {
-        document.querySelectorAll('#registro input:not([type="file"]), #registro select').forEach(i => i.value = "");
+        // Limpieza robusta llamando a los ID exactos
+        const campos = ['activo_fijo', 'descripcion', 'marca', 'modelo', 'serie', 'custodio', 'ubicacion', 'direccion', 'observacion'];
+        campos.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = "";
+        });
+        
+        const estadoEl = document.getElementById('estado');
+        if (estadoEl) estadoEl.value = "BUENO";
+
         document.getElementById('codigoDaseInput').value = "";
         document.getElementById('etiquetaEquipoInput').value = "";
-        document.getElementById('estado').value = "BUENO";
-        setButtonIconText(document.getElementById('btnGuardar'), 'sheet', 'Guardar en Google Sheets');
+        
+        const btnGuardar = document.getElementById('btnGuardar');
+        setButtonIconText(btnGuardar, 'sheet', 'Guardar en Google Sheets');
+        
+        // Limpiamos la memoria del botón para evitar conflictos
+        btnGuardar.dataset.origen = 'registro'; 
+        btnGuardar.dataset.originalActivo = '';
+        btnGuardar.dataset.originalSerie = '';
+        
         document.getElementById('previewCodigoDase').innerHTML = '<span>Vista previa del código DASE</span>';
         document.getElementById('previewEtiquetaEquipo').innerHTML = '<span>Vista previa de etiqueta</span>';
-        document.getElementById('analyzeBtn').disabled = true;
-        setButtonIconText(document.getElementById('analyzeBtn'), 'sparkles', 'Analizar con Gemini');
-        document.getElementById('analyzeBtn').classList.remove('btn-ai-active');
+        
+        const btnAnalyze = document.getElementById('analyzeBtn');
+        btnAnalyze.disabled = true;
+        setButtonIconText(btnAnalyze, 'sparkles', 'Analizar con Gemini');
+        btnAnalyze.classList.remove('btn-ai-active');
+        
         base64CodigoDase = "";
         base64EtiquetaEquipo = "";
     }
