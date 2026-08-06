@@ -72,7 +72,11 @@ function validarCorreoListaBlanca(correoIngresado) {
     const hojaAccesos = ss.getSheetByName('Accesos');
     if (!hojaAccesos) return false;
 
-    const correosAutorizados = hojaAccesos.getRange('A:A').getValues();
+    // OPTIMIZACIÓN: Solo lee las filas con datos
+    const ultimaFila = hojaAccesos.getLastRow();
+    if (ultimaFila === 0) return false;
+
+    const correosAutorizados = hojaAccesos.getRange(1, 1, ultimaFila, 1).getValues();
 
     for (let i = 0; i < correosAutorizados.length; i++) {
       const correoCelda = correosAutorizados[i][0].toString().trim().toLowerCase();
